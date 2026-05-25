@@ -1,6 +1,6 @@
 :root {
   color: #111827;
-  background: #f8fafc;
+  background: #eef2f7;
   font-family:
     Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
     sans-serif;
@@ -16,6 +16,11 @@
 body {
   margin: 0;
   min-width: 320px;
+  background:
+    linear-gradient(rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(15, 23, 42, 0.035) 1px, transparent 1px),
+    #eef2f7;
+  background-size: 28px 28px;
 }
 
 button,
@@ -42,8 +47,9 @@ button {
   padding: 32px;
   border-radius: 8px;
   background:
-    linear-gradient(135deg, rgba(17, 24, 39, 0.98), rgba(30, 41, 59, 0.96)),
-    radial-gradient(circle at 88% 18%, rgba(103, 232, 249, 0.24), transparent 28%);
+    linear-gradient(135deg, rgba(10, 16, 28, 0.98), rgba(29, 44, 63, 0.96)),
+    radial-gradient(circle at 88% 18%, rgba(249, 115, 22, 0.22), transparent 28%),
+    radial-gradient(circle at 18% 92%, rgba(8, 145, 178, 0.26), transparent 26%);
   color: #f8fafc;
 }
 
@@ -57,7 +63,7 @@ button {
 }
 
 .eyebrow {
-  color: #67e8f9;
+  color: #fbbf24;
   font-size: 0.86rem;
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -96,6 +102,35 @@ button {
   padding: 22px;
   background: rgba(15, 23, 42, 0.72);
   border-color: rgba(148, 163, 184, 0.28);
+}
+
+.app-nav {
+  display: inline-flex;
+  gap: 8px;
+  margin: 18px 0 0;
+  padding: 6px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.app-nav button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  border: 0;
+  border-radius: 6px;
+  padding: 0 14px;
+  color: #475569;
+  background: transparent;
+  font-weight: 900;
+}
+
+.app-nav button.active {
+  color: #ffffff;
+  background: #111827;
 }
 
 .hero-panel span {
@@ -280,6 +315,11 @@ select:focus {
   background: #fee2e2;
 }
 
+.session-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
 .hidden-input {
   display: none;
 }
@@ -328,6 +368,179 @@ select:focus {
   background: #fee2e2;
   font-size: 0.9rem;
   font-weight: 800;
+}
+
+.training-view {
+  display: grid;
+  gap: 18px;
+  margin-top: 18px;
+}
+
+.timer-card {
+  display: grid;
+  gap: 12px;
+  padding: 26px;
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  border-radius: 8px;
+  color: #ffffff;
+  background:
+    linear-gradient(135deg, rgba(17, 24, 39, 0.98), rgba(15, 118, 110, 0.86)),
+    radial-gradient(circle at 75% 12%, rgba(251, 191, 36, 0.26), transparent 28%);
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.16);
+}
+
+.timer-card p {
+  margin: 0;
+  color: #cbd5e1;
+}
+
+.timer-value {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: clamp(4rem, 18vw, 8rem);
+  font-weight: 900;
+  line-height: 0.9;
+  letter-spacing: 0;
+}
+
+.timer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.last-set-pill {
+  display: inline-grid;
+  gap: 2px;
+  width: fit-content;
+  padding: 10px 12px;
+  border: 1px solid rgba(251, 191, 36, 0.36);
+  border-radius: 8px;
+  color: #fbbf24;
+  background: rgba(15, 23, 42, 0.32);
+  font-size: 0.8rem;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.last-set-pill strong {
+  color: #ffffff;
+  font-size: 0.96rem;
+  text-transform: none;
+}
+
+.training-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.75fr);
+  gap: 18px;
+  align-items: start;
+}
+
+.tile-panel,
+.rep-panel {
+  padding: 22px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 16px 40px rgba(15, 23, 42, 0.06);
+}
+
+.exercise-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.exercise-tile {
+  display: grid;
+  gap: 8px;
+  min-height: 122px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  padding: 14px;
+  text-align: left;
+  color: #111827;
+  background:
+    linear-gradient(180deg, #ffffff, #f8fafc);
+  box-shadow: inset 0 -3px 0 rgba(8, 145, 178, 0.12);
+}
+
+.exercise-tile.selected {
+  color: #ffffff;
+  border-color: #111827;
+  background:
+    linear-gradient(135deg, #111827, #0f766e);
+  box-shadow: inset 0 -3px 0 rgba(251, 191, 36, 0.52);
+}
+
+.exercise-tile span {
+  color: inherit;
+  opacity: 0.78;
+}
+
+.exercise-tile small {
+  color: #0891b2;
+  font-weight: 900;
+}
+
+.exercise-tile.selected small {
+  color: #fbbf24;
+}
+
+.quick-reps {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.quick-reps button {
+  min-height: 48px;
+  border: 1px solid #dbe3ef;
+  border-radius: 8px;
+  color: #111827;
+  background: #f8fafc;
+  font-weight: 900;
+}
+
+.quick-reps button:hover:not(:disabled) {
+  color: #ffffff;
+  background: #111827;
+}
+
+.quick-reps button:disabled,
+.custom-reps button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.custom-reps {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+}
+
+.live-set-list,
+.live-session-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.live-set-list span,
+.live-session-list p,
+.live-session-list small {
+  color: #64748b;
+}
+
+.live-session-list div {
+  display: grid;
+  gap: 2px;
+  padding-top: 8px;
+  border-top: 1px solid #e2e8f0;
 }
 
 .plot-grid {
@@ -488,7 +701,8 @@ select:focus {
 @media (max-width: 900px) {
   .hero,
   .workspace,
-  .plot-grid {
+  .plot-grid,
+  .training-grid {
     grid-template-columns: 1fr;
   }
 
@@ -525,11 +739,28 @@ select:focus {
   .log-panel,
   .controls-panel,
   .plot-card,
-  .table-card {
+  .table-card,
+  .tile-panel,
+  .rep-panel,
+  .timer-card {
     padding: 16px;
   }
 
+  .app-nav {
+    display: grid;
+    grid-template-columns: 1fr;
+    width: 100%;
+  }
+
   .metric-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .quick-reps {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .custom-reps {
     grid-template-columns: 1fr;
   }
 

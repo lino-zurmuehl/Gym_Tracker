@@ -5,14 +5,20 @@ import {
   Activity,
   BarChart3,
   Calendar,
+  Check,
   Database,
   Download,
+  Dumbbell,
+  Edit3,
   Flame,
   LineChart,
   Lock,
   Plus,
+  Play,
+  RotateCcw,
   Save,
   ShieldCheck,
+  Timer,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -40,6 +46,14 @@ type ExerciseForm = Omit<Exercise, 'id' | 'loadKg' | 'reps'> & {
   newName: string;
   reps: string;
 };
+
+type ExerciseTemplate = {
+  name: string;
+  loadKg: number;
+  loadLabel: string;
+};
+
+type AppView = 'dashboard' | 'training';
 
 const STORAGE_KEY = 'gym-tracker.sessions.v1';
 const CUSTOM_EXERCISES_KEY = 'gym-tracker.custom-exercises.v1';
@@ -192,6 +206,47 @@ function normalizeExerciseName(name: string) {
 
 function exerciseNameForForm(exercise: ExerciseForm) {
   return normalizeExerciseName(exercise.name === NEW_EXERCISE_VALUE ? exercise.newName : exercise.name);
+}
+
+function exerciseToForm(exercise: Exercise): ExerciseForm {
+  return {
+    name: exercise.name,
+    loadKg: String(exercise.loadKg),
+    loadLabel: exercise.loadLabel,
+    newName: '',
+    reps: exercise.reps.join(','),
+    note: exercise.note || '',
+  };
+}
+
+function templatesFromSessions(sessions: Session[]): ExerciseTemplate[] {
+  const templates = new Map<string, ExerciseTemplate>();
+  sessions
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .forEach((session) => {
+      session.exercises.forEach((exercise) => {
+        const key = `${exercise.name}-${exercise.loadKg}-${exercise.loadLabel}`;
+        if (!templates.has(key)) {
+          templates.set(key, {
+            name: exercise.name,
+            loadKg: exercise.loadKg,
+            loadLabel: exercise.loadLabel,
+          });
+        }
+      });
+    });
+  return Array.from(templates.values());
+}
+
+function templateKey(template: ExerciseTemplate) {
+  return `${template.name}-${template.loadKg}-${template.loadLabel}`;
+}
+
+function formatTimer(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(rest).padStart(2, '0')}`;
 }
 
 function pointsForExercise(sessions: Session[], name: string, metric: 'volume' | 'reps' | 'e1rm') {
@@ -357,7 +412,15 @@ function BarPlot({ sessions }: { sessions: Session[] }) {
   );
 }
 
-function ExerciseTable({ sessions, onDeleteSession }: { sessions: Session[]; onDeleteSession: (id: string) => void }) {
+function ExerciseTable({
+  sessions,
+  onDeleteSession,
+  onEditSession,
+}: {
+  sessions: Session[];
+  onDeleteSession: (id: string) => void;
+  onEditSession: (session: Session) => void;
+}) {
   return (
     <section className="table-card">
       <div className="plot-heading">
@@ -380,9 +443,14 @@ function ExerciseTable({ sessions, onDeleteSession }: { sessions: Session[]; onD
                     {session.location} · {formatRest(session.restSeconds)} pause
                   </span>
                 </div>
-                <button className="icon-button" onClick={() => onDeleteSession(session.id)} aria-label="Delete session">
-                  <Trash2 size={16} />
-                </button>
+                <div className="session-actions">
+                  <button className="icon-button" onClick={() => onEditSession(session)} aria-label="Edit session">
+                    <Edit3 size={16} />
+                  </button>
+                  <button className="icon-button" onClick={() => onDeleteSession(session.id)} aria-label="Delete session">
+                    <Trash2 size={16} />
+                  </button>
+                </div>
               </header>
               <div className="exercise-grid">
                 {session.exercises.map((exercise) => (
@@ -486,9 +554,205 @@ function PasscodeGate({
   );
 }
 
+function TrainingView({
+  sessions,
+  restSeconds,
+  onFinishTraining,
+}: {
+  sessions: Session[];
+  restSeconds: number;
+  onFinishTraining: (session: Session) => void;
+}) {
+  const templates = templatesFromSessions(sessions);
+  const [selectedTemplateKey, setSelectedTemplateKey] = React.useState(() => (templates[0] ? templateKey(templates[0]) : ''));
+  const [activeExercises, setActiveExercises] = React.useState<Exercise[]>([]);
+  const [repInput, setRepInput] = React.useState('');
+  const [restRemaining, setRestRemaining] = React.useState(0);
+  const [lastSetLabel, setLastSetLabel] = React.useState('');
+
+  const selectedTemplate = templates.find((template) => templateKey(template) === selectedTemplateKey) || templates[0];
+  const selectedExercise = selectedTemplate
+    ? activeExercises.find(
+        (exercise) =>
+          exercise.name === selectedTemplate.name && exercise.loadKg === selectedTemplate.loadKg && exercise.loadLabel === selectedTemplate.loadLabel,
+      )
+    : undefined;
+  const totalTrainingSets = activeExercises.reduce((sum, exercise) => sum + exercise.reps.length, 0);
+
+  React.useEffect(() => {
+    if (restRemaining <= 0) return undefined;
+    const timerId = window.setInterval(() => {
+      setRestRemaining((current) => Math.max(current - 1, 0));
+    }, 1000);
+    return () => window.clearInterval(timerId);
+  }, [restRemaining]);
+
+  React.useEffect(() => {
+    if (!selectedTemplateKey && templates[0]) {
+      setSelectedTemplateKey(templateKey(templates[0]));
+    }
+  }, [selectedTemplateKey, templates]);
+
+  function logSet(reps: number) {
+    if (!selectedTemplate || !Number.isFinite(reps) || reps <= 0) return;
+
+    setActiveExercises((current) => {
+      const existingIndex = current.findIndex(
+        (exercise) =>
+          exercise.name === selectedTemplate.name &&
+          exercise.loadKg === selectedTemplate.loadKg &&
+          exercise.loadLabel === selectedTemplate.loadLabel,
+      );
+      if (existingIndex === -1) {
+        return [
+          ...current,
+          {
+            id: `${Date.now()}-${selectedTemplate.name}`.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+            name: selectedTemplate.name,
+            loadKg: selectedTemplate.loadKg,
+            loadLabel: selectedTemplate.loadLabel,
+            reps: [reps],
+          },
+        ];
+      }
+
+      return current.map((exercise, index) =>
+        index === existingIndex ? { ...exercise, reps: [...exercise.reps, reps] } : exercise,
+      );
+    });
+    setLastSetLabel(`${selectedTemplate.name} · ${reps} reps · ${selectedTemplate.loadLabel}`);
+    setRepInput('');
+    setRestRemaining(restSeconds);
+  }
+
+  function finishTraining() {
+    const completedExercises = activeExercises.filter((exercise) => exercise.reps.length > 0);
+    if (!completedExercises.length) return;
+
+    onFinishTraining({
+      id: `${format(new Date(), 'yyyy-MM-dd')}-${Date.now()}`,
+      date: format(new Date(), 'yyyy-MM-dd'),
+      location: 'Gym',
+      restSeconds,
+      exercises: completedExercises,
+    });
+    setActiveExercises([]);
+    setRepInput('');
+    setRestRemaining(0);
+    setLastSetLabel('');
+  }
+
+  return (
+    <section className="training-view">
+      <div className="timer-card">
+        <span className="eyebrow">
+          <Timer size={16} />
+          Training mode
+        </span>
+        <div className="timer-value">{formatTimer(restRemaining)}</div>
+        <p>{restRemaining > 0 ? 'Resting. Log the next set when ready.' : 'Ready for the next working set.'}</p>
+        {lastSetLabel && (
+          <div className="last-set-pill">
+            Last set
+            <strong>{lastSetLabel}</strong>
+          </div>
+        )}
+        <div className="timer-actions">
+          <button className="secondary-button" onClick={() => setRestRemaining(restSeconds)}>
+            <RotateCcw size={16} />
+            Restart pause
+          </button>
+          <button className="secondary-button" onClick={() => setRestRemaining(0)}>
+            Skip pause
+          </button>
+        </div>
+      </div>
+
+      <div className="training-grid">
+        <section className="tile-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Pick Exercise + Weight</h2>
+              <p>Tiles come from your logged combinations, newest first.</p>
+            </div>
+            <Dumbbell size={20} />
+          </div>
+          <div className="exercise-tiles">
+            {templates.map((template) => {
+              const key = templateKey(template);
+              return (
+                <button
+                  key={key}
+                  className={`exercise-tile ${selectedTemplateKey === key ? 'selected' : ''}`}
+                  onClick={() => setSelectedTemplateKey(key)}
+                >
+                  <strong>{template.name}</strong>
+                  <span>{template.loadLabel}</span>
+                  <small>{template.loadKg > 0 ? `${template.loadKg} kg` : 'bodyweight'}</small>
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="rep-panel">
+          <div className="panel-heading">
+            <div>
+              <h2>Track Reps</h2>
+              <p>{selectedTemplate ? `${selectedTemplate.name} · ${selectedTemplate.loadLabel}` : 'Choose a tile to begin.'}</p>
+            </div>
+            <Check size={20} />
+          </div>
+          <div className="quick-reps">
+            {[3, 4, 5, 6, 7, 8, 9, 10, 12, 15].map((reps) => (
+              <button key={reps} onClick={() => logSet(reps)} disabled={!selectedTemplate}>
+                {reps}
+              </button>
+            ))}
+          </div>
+          <div className="custom-reps">
+            <input
+              inputMode="numeric"
+              value={repInput}
+              onChange={(event) => setRepInput(event.target.value)}
+              placeholder="Custom reps"
+            />
+            <button className="primary-button" onClick={() => logSet(Number(repInput))} disabled={!selectedTemplate || !repInput}>
+              Log set
+            </button>
+          </div>
+          <div className="live-set-list">
+            <strong>Current selection</strong>
+            <span>{selectedExercise?.reps.length ? selectedExercise.reps.join(', ') : 'No sets logged yet'}</span>
+          </div>
+          <div className="live-session-list">
+            <strong>Session so far · {totalTrainingSets} sets</strong>
+            {activeExercises.length ? (
+              activeExercises.map((exercise) => (
+                <div key={exercise.id}>
+                  <span>{exercise.name}</span>
+                  <small>
+                    {exercise.loadLabel} · {exercise.reps.join(', ')}
+                  </small>
+                </div>
+              ))
+            ) : (
+              <p>No sets yet.</p>
+            )}
+          </div>
+          <button className="primary-button wide" onClick={finishTraining} disabled={!activeExercises.length}>
+            Finish training
+          </button>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 function App() {
   const [passcodeHash, setPasscodeHash] = React.useState(() => localStorage.getItem(PASSCODE_HASH_KEY));
   const [isUnlocked, setIsUnlocked] = React.useState(() => sessionStorage.getItem(UNLOCKED_SESSION_KEY) === 'true');
+  const [activeView, setActiveView] = React.useState<AppView>('dashboard');
   const [sessions, setSessions] = React.useState<Session[]>(loadSessions);
   const [customExercises, setCustomExercises] = React.useState<string[]>(loadCustomExercises);
   const [selectedExercise, setSelectedExercise] = React.useState('Bench press');
@@ -496,6 +760,7 @@ function App() {
   const [location, setLocation] = React.useState('Gym');
   const [restSeconds, setRestSeconds] = React.useState('90');
   const [exercises, setExercises] = React.useState<ExerciseForm[]>([starterExercise]);
+  const [editingSessionId, setEditingSessionId] = React.useState<string | null>(null);
   const fileInputRef = React.useRef<HTMLInputElement>(null);
 
   React.useEffect(() => {
@@ -560,6 +825,24 @@ function App() {
     setExercises((current) => current.filter((_, currentIndex) => currentIndex !== index));
   }
 
+  function resetWorkoutForm() {
+    setSessionDate(format(new Date(), 'yyyy-MM-dd'));
+    setLocation('Gym');
+    setRestSeconds('90');
+    setEditingSessionId(null);
+    setExercises([{ ...starterExercise, name: '', newName: '', loadKg: '', loadLabel: '', reps: '', note: '' }]);
+  }
+
+  function editSession(session: Session) {
+    setActiveView('dashboard');
+    setEditingSessionId(session.id);
+    setSessionDate(session.date);
+    setLocation(session.location);
+    setRestSeconds(String(session.restSeconds));
+    setExercises(session.exercises.map(exerciseToForm));
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   function addSession(event: React.FormEvent) {
     event.preventDefault();
     const nextCustomExercises = new Set(customExercises);
@@ -584,16 +867,23 @@ function App() {
     if (!parsedExercises.length) return;
 
     const nextSession: Session = {
-      id: `${sessionDate}-${Date.now()}`,
+      id: editingSessionId || `${sessionDate}-${Date.now()}`,
       date: sessionDate,
       location: location.trim() || 'Gym',
       restSeconds: Number(restSeconds) || 90,
       exercises: parsedExercises,
     };
 
-    setSessions((current) => [...current, nextSession]);
+    setSessions((current) =>
+      editingSessionId ? current.map((session) => (session.id === editingSessionId ? nextSession : session)) : [...current, nextSession],
+    );
     setCustomExercises(Array.from(nextCustomExercises).sort());
-    setExercises([{ ...starterExercise, name: '', newName: '', loadKg: '', loadLabel: '', reps: '', note: '' }]);
+    resetWorkoutForm();
+  }
+
+  function finishTrainingSession(session: Session) {
+    setSessions((current) => [...current, session]);
+    setActiveView('dashboard');
   }
 
   function exportData() {
@@ -632,7 +922,7 @@ function App() {
         <div>
           <span className="eyebrow">
             <Activity size={16} />
-            GitHub Pages strength analytics
+            Strength analytics
           </span>
           <h1>Gym Tracker</h1>
           <p>
@@ -646,147 +936,177 @@ function App() {
         </div>
       </section>
 
-      <section className="metric-grid">
-        <article>
-          <Calendar size={18} />
-          <span>Sessions</span>
-          <strong>{sessions.length}</strong>
-        </article>
-        <article>
-          <Flame size={18} />
-          <span>Weekly target</span>
-          <strong>{weeklyFrequency >= 2 ? 'On track' : '2x/week'}</strong>
-        </article>
-        <article>
-          <BarChart3 size={18} />
-          <span>Sets logged</span>
-          <strong>{totalSets}</strong>
-        </article>
-        <article>
-          <Activity size={18} />
-          <span>Last workout</span>
-          <strong>{latestSession ? format(parseISO(latestSession.date), 'dd.MM') : 'None'}</strong>
-        </article>
-      </section>
+      <nav className="app-nav" aria-label="App sections">
+        <button className={activeView === 'dashboard' ? 'active' : ''} onClick={() => setActiveView('dashboard')}>
+          <BarChart3 size={16} />
+          Dashboard
+        </button>
+        <button className={activeView === 'training' ? 'active' : ''} onClick={() => setActiveView('training')}>
+          <Play size={16} />
+          Start training
+        </button>
+      </nav>
 
-      <section className="workspace">
-        <form className="log-panel" onSubmit={addSession}>
-          <div className="panel-heading">
-            <div>
-              <h2>Log Workout</h2>
-              <p>Comma-separated reps become set arrays: 8,7,6.</p>
-            </div>
-            <Save size={20} />
-          </div>
-          <div className="form-grid">
-            <label>
-              Date
-              <input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} />
-            </label>
-            <label>
-              Location
-              <input value={location} onChange={(event) => setLocation(event.target.value)} />
-            </label>
-            <label>
-              Pause (seconds)
-              <input inputMode="numeric" value={restSeconds} onChange={(event) => setRestSeconds(event.target.value)} />
-            </label>
-          </div>
+      {activeView === 'training' ? (
+        <TrainingView sessions={sessions} restSeconds={Number(restSeconds) || 90} onFinishTraining={finishTrainingSession} />
+      ) : (
+        <>
+          <section className="metric-grid">
+            <article>
+              <Calendar size={18} />
+              <span>Sessions</span>
+              <strong>{sessions.length}</strong>
+            </article>
+            <article>
+              <Flame size={18} />
+              <span>Weekly target</span>
+              <strong>{weeklyFrequency >= 2 ? 'On track' : '2x/week'}</strong>
+            </article>
+            <article>
+              <BarChart3 size={18} />
+              <span>Sets logged</span>
+              <strong>{totalSets}</strong>
+            </article>
+            <article>
+              <Activity size={18} />
+              <span>Last workout</span>
+              <strong>{latestSession ? format(parseISO(latestSession.date), 'dd.MM') : 'None'}</strong>
+            </article>
+          </section>
 
-          <div className="exercise-form-list">
-            {exercises.map((exercise, index) => (
-              <div className="exercise-form" key={index}>
+          <section className="workspace">
+            <form className="log-panel" onSubmit={addSession}>
+              <div className="panel-heading">
+                <div>
+                  <h2>{editingSessionId ? 'Edit Workout' : 'Log Workout'}</h2>
+                  <p>Comma-separated reps become set arrays: 8,7,6.</p>
+                </div>
+                <Save size={20} />
+              </div>
+              <div className="form-grid">
                 <label>
-                  Exercise
-                  <div className="exercise-name-fields">
-                    <select value={exercise.name} onChange={(event) => updateExercise(index, { name: event.target.value, newName: '' })}>
-                      <option value="">Choose exercise</option>
-                      {exerciseNames.map((name) => (
-                        <option key={name} value={name}>
-                          {name}
-                        </option>
-                      ))}
-                      <option value={NEW_EXERCISE_VALUE}>+ Add new exercise</option>
-                    </select>
-                    {exercise.name === NEW_EXERCISE_VALUE && (
-                      <input
-                        aria-label="New exercise name"
-                        value={exercise.newName}
-                        onChange={(event) => updateExercise(index, { newName: event.target.value })}
-                        placeholder="New exercise name"
-                      />
-                    )}
+                  Date
+                  <input type="date" value={sessionDate} onChange={(event) => setSessionDate(event.target.value)} />
+                </label>
+                <label>
+                  Location
+                  <input value={location} onChange={(event) => setLocation(event.target.value)} />
+                </label>
+                <label>
+                  Pause (seconds)
+                  <input inputMode="numeric" value={restSeconds} onChange={(event) => setRestSeconds(event.target.value)} />
+                </label>
+              </div>
+
+              <div className="exercise-form-list">
+                {exercises.map((exercise, index) => (
+                  <div className="exercise-form" key={index}>
+                    <label>
+                      Exercise
+                      <div className="exercise-name-fields">
+                        <select value={exercise.name} onChange={(event) => updateExercise(index, { name: event.target.value, newName: '' })}>
+                          <option value="">Choose exercise</option>
+                          {exerciseNames.map((name) => (
+                            <option key={name} value={name}>
+                              {name}
+                            </option>
+                          ))}
+                          <option value={NEW_EXERCISE_VALUE}>+ Add new exercise</option>
+                        </select>
+                        {exercise.name === NEW_EXERCISE_VALUE && (
+                          <input
+                            aria-label="New exercise name"
+                            value={exercise.newName}
+                            onChange={(event) => updateExercise(index, { newName: event.target.value })}
+                            placeholder="New exercise name"
+                          />
+                        )}
+                      </div>
+                    </label>
+                    <label>
+                      Load kg
+                      <input inputMode="decimal" value={exercise.loadKg} onChange={(event) => updateExercise(index, { loadKg: event.target.value })} />
+                    </label>
+                    <label>
+                      Setup
+                      <input value={exercise.loadLabel} onChange={(event) => updateExercise(index, { loadLabel: event.target.value })} />
+                    </label>
+                    <label>
+                      Reps
+                      <input value={exercise.reps} onChange={(event) => updateExercise(index, { reps: event.target.value })} placeholder="8,7,6" />
+                    </label>
+                    <button className="icon-button remove" type="button" onClick={() => removeExercise(index)} aria-label="Remove exercise">
+                      <Trash2 size={16} />
+                    </button>
                   </div>
-                </label>
-                <label>
-                  Load kg
-                  <input inputMode="decimal" value={exercise.loadKg} onChange={(event) => updateExercise(index, { loadKg: event.target.value })} />
-                </label>
-                <label>
-                  Setup
-                  <input value={exercise.loadLabel} onChange={(event) => updateExercise(index, { loadLabel: event.target.value })} />
-                </label>
-                <label>
-                  Reps
-                  <input value={exercise.reps} onChange={(event) => updateExercise(index, { reps: event.target.value })} placeholder="8,7,6" />
-                </label>
-                <button className="icon-button remove" type="button" onClick={() => removeExercise(index)} aria-label="Remove exercise">
-                  <Trash2 size={16} />
+                ))}
+              </div>
+              <div className="form-actions">
+                <button type="button" className="secondary-button" onClick={addExercise}>
+                  <Plus size={16} />
+                  Add exercise
+                </button>
+                {editingSessionId && (
+                  <button type="button" className="secondary-button" onClick={resetWorkoutForm}>
+                    Cancel edit
+                  </button>
+                )}
+                <button type="submit" className="primary-button">
+                  {editingSessionId ? 'Update session' : 'Save session'}
                 </button>
               </div>
-            ))}
-          </div>
-          <div className="form-actions">
-            <button type="button" className="secondary-button" onClick={addExercise}>
-              <Plus size={16} />
-              Add exercise
-            </button>
-            <button type="submit" className="primary-button">
-              Save session
-            </button>
-          </div>
-        </form>
+            </form>
 
-        <aside className="controls-panel">
-          <div className="panel-heading">
-            <div>
-              <h2>Analysis Controls</h2>
-              <p>Pick an exercise and keep your raw data portable.</p>
-            </div>
-          </div>
-          <label>
-            Exercise trend
-            <select value={selectedExercise} onChange={(event) => setSelectedExercise(event.target.value)}>
-              {exerciseNames.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="secondary-button wide" onClick={exportData}>
-            <Download size={16} />
-            Export JSON
-          </button>
-          <button className="secondary-button wide" onClick={() => fileInputRef.current?.click()}>
-            <Upload size={16} />
-            Import JSON
-          </button>
-          <button className="secondary-button wide" onClick={lockApp}>
-            <Lock size={16} />
-            Lock app
-          </button>
-          <input ref={fileInputRef} className="hidden-input" type="file" accept="application/json" onChange={importData} />
-        </aside>
-      </section>
+            <aside className="controls-panel">
+              <div className="panel-heading">
+                <div>
+                  <h2>Analysis Controls</h2>
+                  <p>Pick an exercise and keep your raw data portable.</p>
+                </div>
+              </div>
+              <label>
+                Exercise trend
+                <select value={selectedExercise} onChange={(event) => setSelectedExercise(event.target.value)}>
+                  {exerciseNames.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button className="secondary-button wide" onClick={() => setActiveView('training')}>
+                <Play size={16} />
+                Start training
+              </button>
+              <button className="secondary-button wide" onClick={exportData}>
+                <Download size={16} />
+                Export JSON
+              </button>
+              <button className="secondary-button wide" onClick={() => fileInputRef.current?.click()}>
+                <Upload size={16} />
+                Import JSON
+              </button>
+              <button className="secondary-button wide" onClick={lockApp}>
+                <Lock size={16} />
+                Lock app
+              </button>
+              <input ref={fileInputRef} className="hidden-input" type="file" accept="application/json" onChange={importData} />
+            </aside>
+          </section>
 
-      <section className="plot-grid">
-        <BarPlot sessions={sessions} />
-        <LinePlot title="Selected Exercise Volume" subtitle="A focused view for the lift you are debugging." series={selectedSeries} suffix="kg" />
-        <LinePlot title="Estimated Strength Index" subtitle="Epley estimate for loaded lifts; top reps for bodyweight movements." series={strengthSeries} />
-      </section>
+          <section className="plot-grid">
+            <BarPlot sessions={sessions} />
+            <LinePlot title="Selected Exercise Volume" subtitle="A focused view for the lift you are debugging." series={selectedSeries} suffix="kg" />
+            <LinePlot title="Estimated Strength Index" subtitle="Epley estimate for loaded lifts; top reps for bodyweight movements." series={strengthSeries} />
+          </section>
 
-      <ExerciseTable sessions={sessions} onDeleteSession={(id) => setSessions((current) => current.filter((session) => session.id !== id))} />
+          <ExerciseTable
+            sessions={sessions}
+            onEditSession={editSession}
+            onDeleteSession={(id) => setSessions((current) => current.filter((session) => session.id !== id))}
+          />
+        </>
+      )}
     </main>
   );
 }
