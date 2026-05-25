@@ -9,8 +9,10 @@ import {
   Download,
   Flame,
   LineChart,
+  Lock,
   Plus,
   Save,
+  ShieldCheck,
   Trash2,
   Upload,
 } from 'lucide-react';
@@ -41,6 +43,8 @@ type ExerciseForm = Omit<Exercise, 'id' | 'loadKg' | 'reps'> & {
 
 const STORAGE_KEY = 'gym-tracker.sessions.v1';
 const CUSTOM_EXERCISES_KEY = 'gym-tracker.custom-exercises.v1';
+const PASSCODE_HASH_KEY = 'gym-tracker.passcode-hash.v1';
+const UNLOCKED_SESSION_KEY = 'gym-tracker.unlocked-session.v1';
 const NEW_EXERCISE_VALUE = '__new_exercise__';
 
 const seedSessions: Session[] = [
@@ -138,6 +142,14 @@ function loadCustomExercises(): string[] {
 
 function saveCustomExercises(exercises: string[]) {
   localStorage.setItem(CUSTOM_EXERCISES_KEY, JSON.stringify(exercises));
+}
+
+async function hashPasscode(passcode: string) {
+  const bytes = new TextEncoder().encode(passcode);
+  const digest = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 function parseReps(value: string): number[] {
@@ -389,7 +401,94 @@ function ExerciseTable({ sessions, onDeleteSession }: { sessions: Session[]; onD
   );
 }
 
+function PasscodeGate({
+  hasPasscode,
+  onUnlock,
+  onSetPasscode,
+}: {
+  hasPasscode: boolean;
+  onUnlock: (passcode: string) => Promise<boolean>;
+  onSetPasscode: (passcode: string) => Promise<void>;
+}) {
+  const [passcode, setPasscode] = React.useState('');
+  const [confirmPasscode, setConfirmPasscode] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [isSubmitting, setIsSubmitting] = React.useState(false);
+
+  async function submitPasscode(event: React.FormEvent) {
+    event.preventDefault();
+    setError('');
+
+    if (passcode.length < 4) {
+      setError('Use at least 4 characters.');
+      return;
+    }
+
+    if (!hasPasscode && passcode !== confirmPasscode) {
+      setError('The passcodes do not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      if (hasPasscode) {
+        const isValid = await onUnlock(passcode);
+        if (!isValid) {
+          setError('Wrong passcode.');
+          return;
+        }
+      } else {
+        await onSetPasscode(passcode);
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-shell">
+      <form className="auth-card" onSubmit={submitPasscode}>
+        <span className="eyebrow">
+          <ShieldCheck size={16} />
+          Local passcode
+        </span>
+        <h1>{hasPasscode ? 'Unlock Gym Tracker' : 'Set a Passcode'}</h1>
+        <p>
+          Your workouts stay in this browser. The passcode blocks casual access on this device, but it is not a replacement for device security.
+        </p>
+        <label>
+          Passcode
+          <input
+            autoFocus
+            type="password"
+            value={passcode}
+            onChange={(event) => setPasscode(event.target.value)}
+            autoComplete={hasPasscode ? 'current-password' : 'new-password'}
+          />
+        </label>
+        {!hasPasscode && (
+          <label>
+            Confirm passcode
+            <input
+              type="password"
+              value={confirmPasscode}
+              onChange={(event) => setConfirmPasscode(event.target.value)}
+              autoComplete="new-password"
+            />
+          </label>
+        )}
+        {error && <div className="auth-error">{error}</div>}
+        <button type="submit" className="primary-button wide" disabled={isSubmitting}>
+          {hasPasscode ? 'Unlock' : 'Save passcode'}
+        </button>
+      </form>
+    </main>
+  );
+}
+
 function App() {
+  const [passcodeHash, setPasscodeHash] = React.useState(() => localStorage.getItem(PASSCODE_HASH_KEY));
+  const [isUnlocked, setIsUnlocked] = React.useState(() => sessionStorage.getItem(UNLOCKED_SESSION_KEY) === 'true');
   const [sessions, setSessions] = React.useState<Session[]>(loadSessions);
   const [customExercises, setCustomExercises] = React.useState<string[]>(loadCustomExercises);
   const [selectedExercise, setSelectedExercise] = React.useState('Bench press');
@@ -424,6 +523,30 @@ function App() {
   const totalSets = sessions.reduce((sum, session) => sum + session.exercises.reduce((inner, exercise) => inner + exercise.reps.length, 0), 0);
   const latestSession = sessions.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
   const weeklyFrequency = sessions.length > 1 ? Math.round((sessions.length / 4) * 10) / 10 : sessions.length;
+
+  async function unlock(passcode: string) {
+    if (!passcodeHash) return false;
+    const candidateHash = await hashPasscode(passcode);
+    const isValid = candidateHash === passcodeHash;
+    if (isValid) {
+      sessionStorage.setItem(UNLOCKED_SESSION_KEY, 'true');
+      setIsUnlocked(true);
+    }
+    return isValid;
+  }
+
+  async function setPasscode(passcode: string) {
+    const nextHash = await hashPasscode(passcode);
+    localStorage.setItem(PASSCODE_HASH_KEY, nextHash);
+    sessionStorage.setItem(UNLOCKED_SESSION_KEY, 'true');
+    setPasscodeHash(nextHash);
+    setIsUnlocked(true);
+  }
+
+  function lockApp() {
+    sessionStorage.removeItem(UNLOCKED_SESSION_KEY);
+    setIsUnlocked(false);
+  }
 
   function updateExercise(index: number, patch: Partial<ExerciseForm>) {
     setExercises((current) => current.map((exercise, currentIndex) => (currentIndex === index ? { ...exercise, ...patch } : exercise)));
@@ -497,6 +620,10 @@ function App() {
     };
     reader.readAsText(file);
     event.target.value = '';
+  }
+
+  if (!passcodeHash || !isUnlocked) {
+    return <PasscodeGate hasPasscode={Boolean(passcodeHash)} onUnlock={unlock} onSetPasscode={setPasscode} />;
   }
 
   return (
@@ -644,6 +771,10 @@ function App() {
           <button className="secondary-button wide" onClick={() => fileInputRef.current?.click()}>
             <Upload size={16} />
             Import JSON
+          </button>
+          <button className="secondary-button wide" onClick={lockApp}>
+            <Lock size={16} />
+            Lock app
           </button>
           <input ref={fileInputRef} className="hidden-input" type="file" accept="application/json" onChange={importData} />
         </aside>
