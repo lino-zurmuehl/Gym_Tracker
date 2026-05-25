@@ -625,6 +625,13 @@ function TrainingView({
     setRestRemaining(restSeconds);
   }
 
+  function resetTraining() {
+    setActiveExercises([]);
+    setRepInput('');
+    setRestRemaining(0);
+    setLastSetLabel('');
+  }
+
   function finishTraining() {
     const completedExercises = activeExercises.filter((exercise) => exercise.reps.length > 0);
     if (!completedExercises.length) return;
@@ -636,10 +643,7 @@ function TrainingView({
       restSeconds,
       exercises: completedExercises,
     });
-    setActiveExercises([]);
-    setRepInput('');
-    setRestRemaining(0);
-    setLastSetLabel('');
+    resetTraining();
   }
 
   return (
@@ -740,9 +744,15 @@ function TrainingView({
               <p>No sets yet.</p>
             )}
           </div>
-          <button className="primary-button wide" onClick={finishTraining} disabled={!activeExercises.length}>
-            Finish training
-          </button>
+          <div className="training-finish-actions">
+            <button className="secondary-button wide" onClick={resetTraining} disabled={!activeExercises.length && !repInput && restRemaining === 0}>
+              <RotateCcw size={16} />
+              Reset
+            </button>
+            <button className="primary-button wide" onClick={finishTraining} disabled={!activeExercises.length}>
+              Finish training
+            </button>
+          </div>
         </section>
       </div>
     </section>
